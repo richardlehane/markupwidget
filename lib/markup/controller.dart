@@ -1,75 +1,99 @@
 import 'package:fluent_ui/fluent_ui.dart';
-import 'dart:typed_data';
+import 'package:xml/xml.dart';
 import 'app_state.dart';
 
-class MarkupTextEditingController extends TextEditingController {
-  MarkupTextEditingController({super.text, Uint8List? markup})
-    : markup = markup ?? [],
-      parrot = TextEditingController();
+const bullet = "\u2022";
 
-  MarkupTextEditingController.fromValue(super.value, {Uint8List? markup})
-    : markup = markup ?? [],
-      parrot = TextEditingController(),
-      super.fromValue();
+class MarkupTextEditingController extends TextEditingController {
+  MarkupTextEditingController({
+    super.text,
+    List<int>? markup,
+    List<String>? urls,
+  }) : markup = markup ?? [],
+       urls = urls ?? [],
+       parrot = TextEditingController();
+
+  MarkupTextEditingController.fromValue(
+    super.value, {
+    List<int>? markup,
+    List<String>? urls,
+  }) : markup = markup ?? [],
+       urls = urls ?? [],
+       parrot = TextEditingController(),
+       super.fromValue();
 
   final TextEditingController parrot;
   final List<int> markup;
+  final List<String> urls;
   bool listUpdateOperation =
       false; // flag that the update is related to a listUpdate
   bool listToggled = false;
   ToggleButtonsState buttonsState = ToggleButtonsState.none;
 
-  // text has changed, update markup
-  // return true if following this operation it is necessary to update the toggle buttons
+  // Ensure markup and text stay synchronized
+  // Return true if button states need updating
   bool update() {
     if (listUpdateOperation) {
       listUpdateOperation = false;
       return false;
     }
+
+    // Just a selection change, no text modification
     if (markup.length == text.length) {
       return true;
-    } // likely just a move of selection
-    // if we've toggled list and have just added a new line...
-    if (text.length == markup.length + 1 &&
-        selection.start > 0 &&
-        listToggled &&
-        text[selection.start - 1] == "\n") {
-      listUpdateOperation = true;
-      if (selection.start == text.length) {
-        markup.addAll([0, 0, 0]);
-        text += "\u2022 ";
-      } else {
-        markup.insertAll(selection.start, [0, 0, 0]);
-        text =
-            "${text.substring(0, selection.start)}\u2022 ${text.substring(selection.start + 1, text.length)}";
-      }
+    }
+
+    // Handle list auto-formatting
+    if (_shouldAddListBullet()) {
+      _addListBullet();
       return false;
     }
-    // we delete
-    if (markup.length > text.length) {
-      if (selection.start < text.length) {
-        markup.removeRange(
-          selection.start,
-          selection.start + markup.length - text.length,
-        );
-      } else {
-        while (markup.length > text.length) {
-          markup.removeLast();
-        }
-      }
-    }
-    // we add
-    if (selection.start < text.length) {
-      markup.insertAll(
-        selection.start,
-        List<int>.filled(text.length - markup.length, buttonsState.toInt()),
-      );
-    } else {
-      while (markup.length < text.length) {
-        markup.add(buttonsState.toInt());
-      }
-    }
+
+    // Synchronize markup length with text length
+    _syncMarkupLength();
     return false;
+  }
+
+  // if list button is active and we've just added a single newline character, add a list.
+  bool _shouldAddListBullet() {
+    return text.length == markup.length + 1 &&
+        selection.start > 0 &&
+        listToggled &&
+        text[selection.start - 1] == "\n";
+  }
+
+  void _addListBullet() {
+    listUpdateOperation = true;
+    if (selection.start == text.length) {
+      markup.addAll([0, 0, 0]);
+      text += "$bullet ";
+    } else {
+      markup.insertAll(selection.start, [0, 0, 0]);
+      text =
+          "${text.substring(0, selection.start)}$bullet ${text.substring(selection.start + 1)}";
+    }
+  }
+
+  void _syncMarkupLength() {
+    int textLength = text.length;
+    int markupLength = markup.length;
+    int cursor =
+        (selection.start < 0)
+            ? textLength
+            : selection.start; // selection.start may be -1 if no selection
+    // Text was deleted - delete markup
+    if (markupLength > textLength) {
+      markup.removeRange(cursor, cursor + markupLength - textLength);
+    } else if (markupLength < textLength) {
+      // Text was added - add markup
+      int addCount = textLength - markupLength;
+      int currentStyle = buttonsState.toInt();
+      if (cursor < markupLength) {
+        markup.insertAll(cursor, List.filled(addCount, currentStyle));
+      } else {
+        markup.addAll(List.filled(addCount, currentStyle));
+      }
+    }
   }
 
   ToggleButtonsState toggleButtonsActive() {
@@ -89,13 +113,13 @@ class MarkupTextEditingController extends TextEditingController {
   bool listActive() {
     for (int i = selection.start; i >= 0; i--) {
       if (i >= text.length) continue;
-      if (text[i] == "\u2022") return true;
+      if (text[i] == bullet) return true;
       if (text[i] == "\n") return false;
     }
     return false;
   }
 
-  void updateSelection(ToggleButtonsState alter) {
+  void updateSelection(ToggleButtonsState alter, {String? url}) {
     buttonsState = alter;
     int start = selection.start;
     int end = selection.end;
@@ -112,45 +136,99 @@ class MarkupTextEditingController extends TextEditingController {
         end++;
       }
     }
+
+    int markupValue = alter.toInt();
+    if (alter == ToggleButtonsState.link && url != null) {
+      int urlIndex = urls.indexOf(url);
+      if (urlIndex == -1) {
+        urls.add(url);
+        urlIndex = urls.length - 1;
+      }
+      markupValue = urlIndex + 3; // URLs start at index 3
+    }
+
     for (; start < end; start++) {
-      markup[start] = alter.toInt();
+      markup[start] = markupValue;
+    }
+  }
+
+  String? getUrlForSelection() {
+    if (selection.isCollapsed && selection.start < markup.length) {
+      int markupValue = markup[selection.start];
+      if (markupValue >= 3) {
+        int urlIndex = markupValue - 3;
+        return urlIndex < urls.length ? urls[urlIndex] : null;
+      }
+    } else if (!selection.isCollapsed) {
+      int markupValue = markup[selection.start];
+      if (markupValue >= 3) {
+        for (int i = selection.start; i < selection.end; i++) {
+          if (markup[i] != markupValue) return null; // Mixed selection
+        }
+        int urlIndex = markupValue - 3;
+        return urlIndex < urls.length ? urls[urlIndex] : null;
+      }
+    }
+    return null;
+  }
+
+  void updateLinkUrl(String newUrl) {
+    if (selection.isCollapsed && selection.start < markup.length) {
+      int markupValue = markup[selection.start];
+      if (markupValue >= 3) {
+        int urlIndex = markupValue - 3;
+        if (urlIndex < urls.length) {
+          urls[urlIndex] = newUrl;
+        }
+      }
     }
   }
 
   void updateList(bool value) {
     listToggled = value;
-    int off = selection.start;
+    int off = selection.end;
+    int start = (selection.start == off) ? 0 : selection.start;
+    String edited = text;
     // adding a list
     if (value) {
-      for (; off > 0; off--) {
+      for (; off >= start; off--) {
         if (off >= text.length) continue;
-        if (text[off] == "\n") {
+        if (text[off] == "\n" || off == 0) {
           markup.insertAll(off, [0, 0]);
-          listUpdateOperation = true;
-          text =
-              "${text.substring(0, off)}\n\u2022 ${text.substring(off + 1, text.length)}";
-          return;
+          edited =
+              (off == 0)
+                  ? "$bullet $edited"
+                  : "${edited.substring(0, off)}\n$bullet ${edited.substring(off + 1, edited.length)}";
+          if (selection.isCollapsed) return;
         }
       }
-      listUpdateOperation = true;
-      markup.insertAll(0, [0, 0]);
-      text = "\u2022 $text";
+      if (edited != text) {
+        listUpdateOperation = true;
+        text = edited;
+      }
       return;
     }
     // deleting
-    for (; off >= 0; off--) {
-      if (off >= text.length) continue;
-      if (text[off] == "\u2022") {
-        if (off + 1 < text.length && text[off + 1] == " ") {
-          listUpdateOperation = true;
+    for (; off >= start; off--) {
+      if (off >= edited.length) continue;
+      if (edited[off] == "\n" && selection.isCollapsed) break;
+      if (edited[off] == bullet) {
+        if (off + 1 < edited.length && edited[off + 1] == " ") {
           markup.removeRange(off, off + 2);
-          text = text.substring(0, off) + text.substring(off + 2, text.length);
+          edited =
+              edited.substring(0, off) +
+              edited.substring(off + 2, edited.length);
         } else {
-          listUpdateOperation = true;
           markup.removeAt(off);
-          text = text.substring(0, off) + text.substring(off + 1, text.length);
+          edited =
+              edited.substring(0, off) +
+              edited.substring(off + 1, edited.length);
         }
       }
+    }
+    if (edited != text) {
+      listUpdateOperation = true;
+      text = edited;
     }
   }
 
@@ -179,6 +257,111 @@ class MarkupTextEditingController extends TextEditingController {
     }
     ret.add(toSpan(style, buf.toString()));
     return ret;
+  }
+
+  List<XmlElement> toXML() {
+    List<XmlElement> ret = [];
+    StringBuffer buf = StringBuffer();
+    XmlElement thisPara = XmlElement(XmlName("Paragraph"));
+    XmlElement thisList = XmlElement(XmlName("List"));
+    XmlElement thisItem = XmlElement(XmlName("Item"));
+    bool inList = false;
+    int style = 0;
+    Iterator<int> it = markup.iterator;
+    CharacterRange cr = text.characters.iterator;
+
+    while (cr.moveNext()) {
+      it.moveNext();
+      if (cr.current == "\n") {
+        cr.moveNext();
+        // Add a list item if needed
+        if (cr.current == bullet) {
+          it.moveNext();
+          if (inList) {
+            thisItem.children.add(
+              toNode(style, buf.toString()),
+            ); // commit the previous list item
+            thisList.children.add(thisItem); // does this need to use copy??
+            thisItem = XmlElement(XmlName("Item")); // make a new item
+          } else {
+            inList = true;
+            cr.moveNext(); // skip the following space
+            if (cr.current == " ") {
+              it.moveNext;
+            } else {
+              cr.moveBack();
+            }
+            continue;
+          }
+        }
+        cr.moveBack(); // not a bullet!
+        if (inList) {
+          inList = false;
+          // commit the list
+          thisItem.children.add(toNode(style, buf.toString()));
+          buf.clear(); // commit the previous list item
+          thisList.children.add(thisItem); // does this need to use copy??
+          thisItem = XmlElement(XmlName("Item"));
+          thisPara.children.add(thisList);
+          thisList = XmlElement(XmlName("List"));
+          ret.add(thisPara.copy());
+          thisPara = XmlElement(XmlName("Paragraph"));
+        } else {
+          // not a list, commit the para
+          thisPara.children.add(toNode(style, buf.toString()));
+          buf.clear();
+          ret.add(thisPara);
+          thisPara = XmlElement(XmlName("Paragraph"));
+        }
+        continue;
+      }
+      if (it.current == style) {
+        buf.write(cr.current);
+      } else {
+        if (buf.length > 0) {
+          if (inList) {
+            thisItem.children.add(toNode(style, buf.toString()));
+          } else {
+            thisPara.children.add(toNode(style, buf.toString()));
+          }
+          buf.clear();
+        }
+        style = it.current;
+        buf.write(cr.current);
+      }
+    }
+    if (inList) {
+      // commit the list
+      thisItem.children.add(
+        toNode(style, buf.toString()),
+      ); // commit the previous list item
+      thisList.children.add(thisItem); // does this need to use copy??
+      thisPara.children.add(thisList);
+      ret.add(thisPara);
+    } else {
+      // not a list, commit the para
+      thisPara.children.add(toNode(style, buf.toString()));
+      ret.add(thisPara);
+    }
+    return ret;
+  }
+
+  XmlNode toNode(int style, String text) {
+    switch (style) {
+      case 0:
+        return XmlText(text);
+      case 1:
+        return toElement("Emphasis", text);
+      case 2:
+        return toElement("Source", text);
+      default:
+        int index = style - 3;
+        if (index > urls.length - 1) {
+          return toElement("Source", text, "url", urls[index]);
+        } else {
+          return toElement("Source", text);
+        }
+    }
   }
 
   @override
@@ -222,4 +405,15 @@ TextSpan toSpan(int style, String text) {
         text: text,
       );
   }
+}
+
+XmlElement toElement(
+  String name,
+  String value, [
+  String? attrName,
+  String? attrVal,
+]) {
+  List<XmlAttribute> attrs =
+      (attrName == null) ? [] : [XmlAttribute(XmlName(attrName), attrVal!)];
+  return XmlElement(XmlName(name), attrs, [XmlText(value)], false);
 }

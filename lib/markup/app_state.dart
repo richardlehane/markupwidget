@@ -50,8 +50,8 @@ class AppState {
     this.listButtonState = false,
   });
 
-  final MarkupTextEditingController markupTextEditingController;
   final FocusNode focusNode;
+  final MarkupTextEditingController markupTextEditingController;
   final ToggleButtonsState toggleButtonsState;
   final bool listButtonState;
 
@@ -84,45 +84,60 @@ class AppStateWidget extends StatefulWidget {
 }
 
 class AppStateWidgetState extends State<AppStateWidget> {
-  AppState _data = AppState(
-    focusNode: FocusNode(),
-    markupTextEditingController: MarkupTextEditingController(),
+  late final FocusNode _focusNode;
+  late final MarkupTextEditingController _controller;
+  ToggleButtonsState _toggleButtonsState = ToggleButtonsState.none;
+  bool _listButtonState = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode();
+    _controller = MarkupTextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  AppState get _appState => AppState(
+    focusNode: _focusNode,
+    markupTextEditingController: _controller,
+    toggleButtonsState: _toggleButtonsState,
+    listButtonState: _listButtonState,
   );
 
-  void updateToggleButtonsStateOnButtonPressed(ToggleButtonsState value) {
-    final MarkupTextEditingController controller =
-        _data.markupTextEditingController;
-    ToggleButtonsState alter = _data.toggleButtonsState.alter(value);
-    controller.updateSelection(alter);
-    _data = _data.copyWith(
-      markupTextEditingController: controller,
-      toggleButtonsState: alter,
-    );
-    _data.focusNode.requestFocus();
+  void updateToggleButtonsStateOnButtonPressed(
+    ToggleButtonsState value, {
+    String? url,
+  }) {
+    ToggleButtonsState newState = _toggleButtonsState.alter(value);
+    _controller.updateSelection(newState, url: url);
+    _toggleButtonsState = newState;
+    _focusNode.requestFocus();
     setState(() {});
   }
 
   void updateListButtonStateOnButtonPressed(bool value) {
-    final MarkupTextEditingController controller =
-        _data.markupTextEditingController;
-    controller.updateList(value);
-    _data = _data.copyWith(listButtonState: value);
-    _data.focusNode.requestFocus();
+    _controller.updateList(value);
+    _listButtonState = value;
+    _focusNode.requestFocus();
     setState(() {});
   }
 
   void updateAllButtonsStateOnSelectionChanged(
     MarkupTextEditingController controller,
   ) {
-    _data = _data.copyWith(
-      toggleButtonsState: controller.toggleButtonsActive(),
-      listButtonState: controller.listActive(),
-    );
+    _toggleButtonsState = controller.toggleButtonsActive();
+    _listButtonState = controller.listActive();
     setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
-    return AppStateManager(state: _data, child: widget.child);
+    return AppStateManager(state: _appState, child: widget.child);
   }
 }

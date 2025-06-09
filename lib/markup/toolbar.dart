@@ -63,12 +63,17 @@ class MarkupToolbar extends StatelessWidget {
           child: ToggleButton(
             checked:
                 manager.appState.toggleButtonsState == ToggleButtonsState.link,
-            onChanged: (v) {
-              AppStateWidget.of(
-                context,
-              ).updateToggleButtonsStateOnButtonPressed(
-                ToggleButtonsState.link,
-              );
+            onChanged: (v) async {
+              String? url;
+              if (v) url = await showLinkDialog(context);
+              if (context.mounted) {
+                AppStateWidget.of(
+                  context,
+                ).updateToggleButtonsStateOnButtonPressed(
+                  ToggleButtonsState.link,
+                  url: url,
+                );
+              }
             },
             child: SizedBox(
               width: 75.0,
@@ -103,5 +108,33 @@ class MarkupToolbar extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  Future<String?> showLinkDialog(BuildContext context) async {
+    TextEditingController urlController = TextEditingController();
+    final url = await showDialog<String>(
+      context: context,
+      builder:
+          (context) => ContentDialog(
+            constraints: BoxConstraints(maxHeight: 200.0, maxWidth: 400.0),
+            title: const Text('Enter link location:'),
+            content: TextBox(controller: urlController),
+            actions: [
+              Button(
+                child: const Text('Confirm'),
+                onPressed: () {
+                  Navigator.pop(context, urlController.text);
+                  // Delete file here
+                },
+              ),
+              FilledButton(
+                child: const Text('Cancel'),
+                onPressed: () => Navigator.pop(context, ''),
+              ),
+            ],
+          ),
+    );
+    urlController.dispose();
+    return url;
   }
 }
