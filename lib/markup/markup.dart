@@ -58,9 +58,6 @@ class _MarkupState extends State<Markup> {
   @override
   void initState() {
     super.initState();
-    markupTextEditingController.removeListener(
-      updateAllButtonsStateOnSelectionChanged,
-    ); // not sure if needed
     markupTextEditingController.addListener(
       updateAllButtonsStateOnSelectionChanged,
     );
