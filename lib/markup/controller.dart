@@ -332,10 +332,6 @@ class MarkupTextEditingController extends TextEditingController {
     TextStyle? style,
     required bool withComposing,
   }) {
-    assert(
-      !value.composing.isValid || !withComposing || value.isComposingRangeValid,
-    );
-
     return TextSpan(
       style: TextStyle(color: Colors.black),
       children: applyStyles(),
