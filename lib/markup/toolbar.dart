@@ -1,25 +1,30 @@
 import 'package:fluent_ui/fluent_ui.dart';
-import 'app_state.dart';
-import 'app_state_manager.dart';
+import 'togglebutton.dart';
 
 class MarkupToolbar extends StatelessWidget {
-  const MarkupToolbar({super.key});
+  const MarkupToolbar({
+    super.key,
+    required this.toggleButtonsState,
+    required this.listButtonState,
+    required this.updateToggleButtonsStateOnButtonPressed,
+    required this.updateListButtonStateOnButtonPressed,
+  });
+  final ToggleButtonsState toggleButtonsState;
+  final bool listButtonState;
+  final void Function(ToggleButtonsState, {String? url})
+  updateToggleButtonsStateOnButtonPressed;
+  final ValueChanged<bool> updateListButtonStateOnButtonPressed;
 
   @override
   Widget build(BuildContext context) {
-    final AppStateManager manager = AppStateManager.of(context);
     return Row(
       children: [
         Padding(
           padding: EdgeInsets.fromLTRB(0, 0, 5.0, 5.0),
           child: ToggleButton(
-            checked:
-                manager.appState.toggleButtonsState ==
-                ToggleButtonsState.emphasis,
+            checked: toggleButtonsState == ToggleButtonsState.emphasis,
             onChanged: (v) {
-              AppStateWidget.of(
-                context,
-              ).updateToggleButtonsStateOnButtonPressed(
+              updateToggleButtonsStateOnButtonPressed(
                 ToggleButtonsState.emphasis,
               );
             },
@@ -37,13 +42,9 @@ class MarkupToolbar extends StatelessWidget {
         Padding(
           padding: EdgeInsets.fromLTRB(0, 0, 5.0, 5.0),
           child: ToggleButton(
-            checked:
-                manager.appState.toggleButtonsState ==
-                ToggleButtonsState.source,
+            checked: toggleButtonsState == ToggleButtonsState.source,
             onChanged: (v) {
-              AppStateWidget.of(
-                context,
-              ).updateToggleButtonsStateOnButtonPressed(
+              updateToggleButtonsStateOnButtonPressed(
                 ToggleButtonsState.source,
               );
             },
@@ -61,15 +62,12 @@ class MarkupToolbar extends StatelessWidget {
         Padding(
           padding: EdgeInsets.fromLTRB(0, 0, 5.0, 5.0),
           child: ToggleButton(
-            checked:
-                manager.appState.toggleButtonsState == ToggleButtonsState.link,
+            checked: toggleButtonsState == ToggleButtonsState.link,
             onChanged: (v) async {
               String? url;
               if (v) url = await showLinkDialog(context);
               if (context.mounted) {
-                AppStateWidget.of(
-                  context,
-                ).updateToggleButtonsStateOnButtonPressed(
+                updateToggleButtonsStateOnButtonPressed(
                   ToggleButtonsState.link,
                   url: url,
                 );
@@ -89,11 +87,9 @@ class MarkupToolbar extends StatelessWidget {
         Padding(
           padding: EdgeInsets.fromLTRB(0, 0, 0, 5.0),
           child: ToggleButton(
-            checked: manager.appState.listButtonState,
+            checked: listButtonState,
             onChanged: (v) {
-              AppStateWidget.of(
-                context,
-              ).updateListButtonStateOnButtonPressed(v);
+              updateListButtonStateOnButtonPressed(v);
             },
             child: SizedBox(
               width: 75.0,

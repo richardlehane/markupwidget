@@ -1,76 +1,77 @@
 import 'package:fluent_ui/fluent_ui.dart';
-import 'app_state.dart';
 import 'toolbar.dart';
 import 'controller.dart';
-import 'app_state_manager.dart';
+import 'togglebutton.dart';
 
-class Markup extends StatelessWidget {
+class Markup extends StatefulWidget {
   const Markup({super.key});
+
   @override
-  Widget build(BuildContext context) {
-    return AppStateWidget(child: MarkupWidget());
+  State<Markup> createState() => _MarkupState();
+}
+
+class _MarkupState extends State<Markup> {
+  final FocusNode _focusNode = FocusNode();
+  final MarkupTextEditingController _markupTextEditingController =
+      MarkupTextEditingController();
+  ToggleButtonsState _toggleButtonsState = ToggleButtonsState.none;
+  bool _listButtonState = false;
+
+  void _updateToggleButtonsStateOnButtonPressed(
+    ToggleButtonsState value, {
+    String? url,
+  }) {
+    setState(() {
+      ToggleButtonsState newState = _toggleButtonsState.alter(value);
+      _markupTextEditingController.updateSelection(newState, url: url);
+      _toggleButtonsState = newState;
+      _focusNode.requestFocus();
+    });
   }
-}
 
-class MarkupWidget extends StatefulWidget {
-  const MarkupWidget({super.key});
+  void _updateListButtonStateOnButtonPressed(bool value) {
+    setState(() {
+      _markupTextEditingController.updateList(value);
+      _listButtonState = value;
+      _focusNode.requestFocus();
+    });
+  }
 
-  @override
-  State<MarkupWidget> createState() => _MarkupWidgetState();
-}
-
-class _MarkupWidgetState extends State<MarkupWidget> {
-  MarkupTextEditingController? _currentController;
-  FocusNode? _currentFocusNode;
-  VoidCallback? _controllerListener;
+  void _updateAllButtonsStateOnSelectionChanged() {
+    setState(() {
+      if (_markupTextEditingController.update()) {
+        setState(() {
+          _toggleButtonsState =
+              _markupTextEditingController.toggleButtonsActive();
+          _listButtonState = _markupTextEditingController.listActive();
+        });
+      } else {
+        _markupTextEditingController.parrot.text =
+            '''Selection start: ${_markupTextEditingController.selection.start} End: ${_markupTextEditingController.selection.end}
+            Collapsed: ${_markupTextEditingController.selection.isCollapsed}
+            Text length: ${_markupTextEditingController.text.length}
+            Markup length: ${_markupTextEditingController.markup.length}
+            Markup: ${_markupTextEditingController.markup.toString()}
+            XML: ${_markupTextEditingController.toXML().toString()}''';
+      }
+    });
+  }
 
   @override
   void initState() {
     super.initState();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-
-    final newController =
-        AppStateManager.of(context).appState.markupTextEditingController;
-    final newFocusNode = AppStateManager.of(context).appState.focusNode;
-
-    // Only update if controller actually changed
-    if (_currentController != newController) {
-      // Remove listener from old controller
-      if (_controllerListener != null && _currentController != null) {
-        _currentController!.removeListener(_controllerListener!);
-      }
-
-      _currentController = newController;
-      _currentFocusNode = newFocusNode;
-
-      // Create and add new listener
-      _controllerListener = () {
-        if (_currentController!.update()) {
-          AppStateWidget.of(
-            context,
-          ).updateAllButtonsStateOnSelectionChanged(_currentController!);
-        }
-        _currentController!.parrot.text =
-            '''Selection start: ${_currentController!.selection.start} End: ${_currentController!.selection.end}
-            Collapsed: ${_currentController!.selection.isCollapsed}
-            Text length: ${_currentController!.text.length}
-            Markup length: ${_currentController!.markup.length}
-            Markup: ${_currentController!.markup.toString()}
-            XML: ${_currentController!.toXML().toString()}''';
-      };
-      _currentController!.addListener(_controllerListener!);
-    }
+    _markupTextEditingController.removeListener(
+      _updateAllButtonsStateOnSelectionChanged,
+    ); // not sure if needed
+    _markupTextEditingController.addListener(
+      _updateAllButtonsStateOnSelectionChanged,
+    );
   }
 
   @override
   void dispose() {
-    if (_controllerListener != null && _currentController != null) {
-      _currentController!.removeListener(_controllerListener!);
-    }
+    _focusNode.dispose();
+    _markupTextEditingController.dispose();
     super.dispose();
   }
 
@@ -78,20 +79,27 @@ class _MarkupWidgetState extends State<MarkupWidget> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        MarkupToolbar(),
+        MarkupToolbar(
+          toggleButtonsState: _toggleButtonsState,
+          listButtonState: _listButtonState,
+          updateToggleButtonsStateOnButtonPressed:
+              _updateToggleButtonsStateOnButtonPressed,
+          updateListButtonStateOnButtonPressed:
+              _updateListButtonStateOnButtonPressed,
+        ),
         SizedBox(
           height: 200.0,
           child: TextBox(
-            focusNode: _currentFocusNode,
+            focusNode: _focusNode,
             maxLines: null,
-            controller: _currentController,
+            controller: _markupTextEditingController,
           ),
         ),
         Padding(padding: EdgeInsets.all(10.0)),
         SizedBox(
           height: 200.0,
           child: TextBox(
-            controller: _currentController?.parrot,
+            controller: _markupTextEditingController.parrot,
             readOnly: true,
             maxLines: null,
           ),
