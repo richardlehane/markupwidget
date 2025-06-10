@@ -13,15 +13,6 @@ class MarkupTextEditingController extends TextEditingController {
        urls = urls ?? [],
        parrot = TextEditingController();
 
-  MarkupTextEditingController.fromValue(
-    super.value, {
-    List<int>? markup,
-    List<String>? urls,
-  }) : markup = markup ?? [],
-       urls = urls ?? [],
-       parrot = TextEditingController(),
-       super.fromValue();
-
   final TextEditingController parrot;
   final List<int> markup;
   final List<String> urls;
@@ -40,29 +31,34 @@ class MarkupTextEditingController extends TextEditingController {
 
     // Just a selection change, no text modification
     if (markup.length == text.length) {
+      bool lT = listActive();
+      ToggleButtonsState bS = toggleButtonsActive();
+      if (lT == listToggled && bS == buttonsState) return false;
+      listToggled = lT;
+      buttonsState = bS;
       return true;
     }
 
     // Handle list auto-formatting
-    if (_shouldAddListBullet()) {
-      _addListBullet();
+    if (shouldAddListBullet()) {
+      addListBullet();
       return false;
     }
 
     // Synchronize markup length with text length
-    _syncMarkupLength();
+    syncMarkupLength();
     return false;
   }
 
   // if list button is active and we've just added a single newline character, add a list.
-  bool _shouldAddListBullet() {
+  bool shouldAddListBullet() {
     return text.length == markup.length + 1 &&
         selection.start > 0 &&
         listToggled &&
         text[selection.start - 1] == "\n";
   }
 
-  void _addListBullet() {
+  void addListBullet() {
     listUpdateOperation = true;
     if (selection.start == text.length) {
       markup.addAll([0, 0, 0]);
@@ -74,7 +70,7 @@ class MarkupTextEditingController extends TextEditingController {
     }
   }
 
-  void _syncMarkupLength() {
+  void syncMarkupLength() {
     int textLength = text.length;
     int markupLength = markup.length;
     int cursor =
@@ -136,7 +132,6 @@ class MarkupTextEditingController extends TextEditingController {
         end++;
       }
     }
-
     int markupValue = alter.toInt();
     if (alter == ToggleButtonsState.link && url != null) {
       int urlIndex = urls.indexOf(url);
@@ -146,41 +141,8 @@ class MarkupTextEditingController extends TextEditingController {
       }
       markupValue = urlIndex + 3; // URLs start at index 3
     }
-
     for (; start < end; start++) {
       markup[start] = markupValue;
-    }
-  }
-
-  String? getUrlForSelection() {
-    if (selection.isCollapsed && selection.start < markup.length) {
-      int markupValue = markup[selection.start];
-      if (markupValue >= 3) {
-        int urlIndex = markupValue - 3;
-        return urlIndex < urls.length ? urls[urlIndex] : null;
-      }
-    } else if (!selection.isCollapsed) {
-      int markupValue = markup[selection.start];
-      if (markupValue >= 3) {
-        for (int i = selection.start; i < selection.end; i++) {
-          if (markup[i] != markupValue) return null; // Mixed selection
-        }
-        int urlIndex = markupValue - 3;
-        return urlIndex < urls.length ? urls[urlIndex] : null;
-      }
-    }
-    return null;
-  }
-
-  void updateLinkUrl(String newUrl) {
-    if (selection.isCollapsed && selection.start < markup.length) {
-      int markupValue = markup[selection.start];
-      if (markupValue >= 3) {
-        int urlIndex = markupValue - 3;
-        if (urlIndex < urls.length) {
-          urls[urlIndex] = newUrl;
-        }
-      }
     }
   }
 
@@ -356,7 +318,7 @@ class MarkupTextEditingController extends TextEditingController {
         return toElement("Source", text);
       default:
         int index = style - 3;
-        if (index > urls.length - 1) {
+        if (index < urls.length) {
           return toElement("Source", text, "url", urls[index]);
         } else {
           return toElement("Source", text);
