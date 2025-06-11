@@ -22,17 +22,16 @@ class _MarkupState extends State<Markup> {
     String? url,
   }) {
     setState(() {
-      ToggleButtonsState newState = toggleButtonsState.alter(value);
-      markupTextEditingController.updateSelection(newState, url: url);
-      toggleButtonsState = newState;
+      toggleButtonsState = toggleButtonsState.alter(value);
+      markupTextEditingController.updateSelection(toggleButtonsState, url: url);
       focusNode.requestFocus();
     });
   }
 
   void updateListButtonStateOnButtonPressed(bool value) {
     setState(() {
-      markupTextEditingController.updateList(value);
       listButtonState = value;
+      markupTextEditingController.updateList(listButtonState);
       focusNode.requestFocus();
     });
   }
@@ -43,15 +42,6 @@ class _MarkupState extends State<Markup> {
         toggleButtonsState = markupTextEditingController.buttonsState;
         listButtonState = markupTextEditingController.listToggled;
       });
-    } else {
-      markupTextEditingController.parrot.text = '''
-            Selection start: ${markupTextEditingController.selection.start} End: ${markupTextEditingController.selection.end}
-            Collapsed: ${markupTextEditingController.selection.isCollapsed}
-            Text length: ${markupTextEditingController.text.length}
-            Markup length: ${markupTextEditingController.markup.length}
-            Markup: ${markupTextEditingController.markup.toString()}
-            Links: ${markupTextEditingController.urls.toString()}
-            XML: ${markupTextEditingController.toXML().toString()}''';
     }
   }
 
