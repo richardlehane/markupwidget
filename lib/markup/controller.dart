@@ -242,6 +242,71 @@ class MarkupTextEditingController extends TextEditingController {
     return ret;
   }
 
+ 
+  int _getStyle(XmlNode node) {
+    if (node.nodeType == XmlNodeType.TEXT) return 0;
+    if (node.nodeType == XmlNodeType.ELEMENT) {
+      switch (node.name.local) {
+        case "Emphasis":
+          return 1;
+        case "Source"
+          return 2;
+        default:
+          return -1;
+      }
+    }
+  }
+
+  factory MarkupTextEditingController.fromXML(List<XmlElement> paragraphs) {
+    StringBuffer buf = StringBuffer();
+    List<int> m = [];
+    List<String> u = [];
+
+    void commitNode(XmlNode node, int style) {     
+        if (style == 2) {
+          String? link = node.getAttribute("url");
+          if (link) {
+            u.add(link);
+            style = style + u.length;
+          }
+        }
+      String txt = node.innerText();
+      buf.write(txt);
+      m.addAll(List.filled(txt.length, style);
+    }
+
+    bool first = true;
+    for (var para in paragraphs) {
+      if (first) {
+        first = false;
+      } else {
+        buf.write("\n");
+        m.add(0);
+      }
+      for (var child in para.children) {
+        bool nl = true;
+        int style = _getStyle(child);
+        if (style < 0) {
+          for (var item in child.children) {
+            if (!nl) {
+              buf.write("\n");
+              m.add(0);
+            }
+            for (var node in item.children) {
+              style = _getStyle(node);
+              commitNode(node, style);
+              nl = false;
+            }
+          }
+        } else {
+          commitNode(child, style);
+          nl = false;
+        }
+      }
+    }
+    return MarkupTextEditingController(buf.toString(), m, u);
+  }
+  
   List<XmlElement> toXML() {
     List<XmlElement> ret = [];
     StringBuffer buf = StringBuffer();
