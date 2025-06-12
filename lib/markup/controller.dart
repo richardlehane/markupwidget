@@ -153,46 +153,48 @@ class MarkupTextEditingController extends TextEditingController {
     }
   }
 
+  String _prependBullet(String t) => "$bullet $t";
+  String _appendBullet(String t) => "$t$bullet ";
+  String _insertBullet(String t, int off) => ${text.substring(0, off)}$bullet ${text.substring(off + 1)};
+  
   void _addListBullet() {
     _listUpdateOperation = true;
     if (selection.start == text.characters.length) {
       _markup.addAll([0, 0, 0]);
-      text += "$bullet ";
+      text = _appendBullet(text);
     } else {
       _markup.insertAll(selection.start, [0, 0, 0]);
-      text =
-          "${text.substring(0, selection.start)}$bullet ${text.substring(selection.start + 1)}";
+      text = _insertBullet(text, selection.start);
     }
   }
 
-  // This function needs fixing.
-  // Merge with code above
   void updateList(bool value) {
-    listToggled = value;
-    // String edited = text;
+    listToggled = value;    
     // adding a list
     if (value) {
       if (selection.isCollapsed) {
-        // if we've toggled at the end of the line, don't add yet...
-        if (selection.start >= text.characters.length) return;
-        for (var off = selection.start; off >= 0; off--) {
+        if (selection.start >= text.characters.length) return;  // return without adding bullet if at the end of the line
+        String edited = text;
+        for (var off = selection.end; off >= 0; off--) {
           if (text[off] == "\n" || off == 0) {
-            _listUpdateOperation = true;
             _markup.insertAll(off, [0, 0]);
-            text =
+            edited =
                 (off == 0)
-                    ? "$bullet $text"
-                    : "${text.substring(0, off)}\n$bullet ${text.substring(off + 1, text.length)}";
+                    ? _prependBullet(edited)
+                    : _insertBullet(edited, off + 1);
+            if (off < selection.start) break;
           }
         }
       }
-
+      _listUpdateOperation = true;
+      text = edited;
       return;
     }
     // deleting
-    for (; off >= start; off--) {
+    String edited = text;
+    for (var off = selection.end; off >= 0; off--) {
       if (off >= edited.length) continue;
-      if (edited[off] == "\n" && selection.isCollapsed) break;
+      if (edited[off] == "\n" && off < selection.start) break;
       if (edited[off] == bullet) {
         if (off + 1 < edited.length && edited[off + 1] == " ") {
           _markup.removeRange(off, off + 2);
