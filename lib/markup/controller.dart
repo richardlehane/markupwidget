@@ -24,14 +24,14 @@ class MarkupTextEditingController extends TextEditingController {
 
   void _updateParrot(String message) {
     parrot.text = '''
-            Selection start: ${selection.start} End: ${selection.end}
-            Collapsed: ${selection.isCollapsed}
-            Text length: ${text.characters.length}
-            Markup length: ${_markup.length}
-            Markup: ${_markup.toString()}
-            Links: ${_urls.toString()}
-            XML: ${toXML().toString()}
-            Message: $message''';
+Selection start: ${selection.start} End: ${selection.end}
+Collapsed: ${selection.isCollapsed}
+Text length: ${text.characters.length}
+Markup length: ${_markup.length}
+Markup: ${_markup.toString()}
+Links: ${_urls.toString()}
+XML: ${toXML().toString()}
+Message: $message''';
   }
 
   // Ensure markup and text stay synchronized
@@ -111,13 +111,19 @@ class MarkupTextEditingController extends TextEditingController {
   }
 
   bool _listActive() {
-    for (int i = selection.end; i > -1; i--) {
-      if (i >= text.characters.length) continue;
+    bool hasBullet = false;
+    for (int i = selection.end - 1; i > -1; i--) {
       if (text[i] == bullet) {
         if (i <= selection.start) return true;
+        hasBullet = true;
         continue;
       }
-      if (i <= selection.start && text[i] == "\n") return false;
+      if (text[i] == "\n") {
+        if (!hasBullet) {
+          return false;
+        }
+        hasBullet = false;
+      }
     }
     return false;
   }
@@ -155,8 +161,9 @@ class MarkupTextEditingController extends TextEditingController {
 
   String _prependBullet(String t) => "$bullet $t";
   String _appendBullet(String t) => "$t$bullet ";
-  String _insertBullet(String t, int off) => ${text.substring(0, off)}$bullet ${text.substring(off + 1)};
-  
+  String _insertBullet(String t, int off) =>
+      "${t.substring(0, off)}$bullet ${t.substring(off)}";
+
   void _addListBullet() {
     _listUpdateOperation = true;
     if (selection.start == text.characters.length) {
@@ -169,21 +176,28 @@ class MarkupTextEditingController extends TextEditingController {
   }
 
   void updateList(bool value) {
-    listToggled = value;    
+    listToggled = value;
     // adding a list
     if (value) {
-      if (selection.isCollapsed) {
-        if (selection.start >= text.characters.length) return;  // return without adding bullet if at the end of the line
-        String edited = text;
-        for (var off = selection.end; off >= 0; off--) {
-          if (text[off] == "\n" || off == 0) {
+      if (selection.start >= text.characters.length) {
+        return;
+      } // return without adding bullet if at the end of the line
+      String edited = text;
+      bool alreadyBulleted = false;
+      for (var off = selection.end - 1; off >= 0; off--) {
+        if (text[off] == bullet) {
+          alreadyBulleted = true;
+        }
+        if (text[off] == "\n" || off == 0) {
+          if (!alreadyBulleted) {
             _markup.insertAll(off, [0, 0]);
             edited =
                 (off == 0)
                     ? _prependBullet(edited)
                     : _insertBullet(edited, off + 1);
-            if (off < selection.start) break;
           }
+          alreadyBulleted = false;
+          if (off < selection.start) break;
         }
       }
       _listUpdateOperation = true;
@@ -242,37 +256,24 @@ class MarkupTextEditingController extends TextEditingController {
     return ret;
   }
 
- 
-  int _getStyle(XmlNode node) {
-    if (node.nodeType == XmlNodeType.TEXT) return 0;
-    if (node.nodeType == XmlNodeType.ELEMENT) {
-      switch (node.name.local) {
-        case "Emphasis":
-          return 1;
-        case "Source"
-          return 2;
-        default:
-          return -1;
-      }
-    }
-  }
-
   factory MarkupTextEditingController.fromXML(List<XmlElement> paragraphs) {
     StringBuffer buf = StringBuffer();
     List<int> m = [];
     List<String> u = [];
 
-    void commitNode(XmlNode node, int style) {     
-        if (style == 2) {
-          String? link = node.getAttribute("url");
-          if (link) {
-            u.add(link);
-            style = style + u.length;
-          }
+    void commitNode(XmlNode node, int style) {
+      if (style == 2) {
+        String? link = node.getAttribute("url");
+        if (link != null) {
+          u.add(link);
+          style = style + u.length;
         }
-      String txt = node.innerText();
+      }
+      String txt =
+          (node.nodeType == XmlNodeType.TEXT) ? node.value! : node.innerText;
+
       buf.write(txt);
-      m.addAll(List.filled(txt.length, style);
+      m.addAll(List.filled(txt.length, style));
     }
 
     bool first = true;
@@ -283,8 +284,8 @@ class MarkupTextEditingController extends TextEditingController {
         buf.write("\n");
         m.add(0);
       }
+      bool nl = true;
       for (var child in para.children) {
-        bool nl = true;
         int style = _getStyle(child);
         if (style < 0) {
           for (var item in child.children) {
@@ -292,6 +293,8 @@ class MarkupTextEditingController extends TextEditingController {
               buf.write("\n");
               m.add(0);
             }
+            buf.write("$bullet ");
+            m.addAll([0, 0]);
             for (var node in item.children) {
               style = _getStyle(node);
               commitNode(node, style);
@@ -304,9 +307,13 @@ class MarkupTextEditingController extends TextEditingController {
         }
       }
     }
-    return MarkupTextEditingController(buf.toString(), m, u);
+    return MarkupTextEditingController(
+      text: buf.toString(),
+      markup: m,
+      urls: u,
+    );
   }
-  
+
   List<XmlElement> toXML() {
     List<XmlElement> ret = [];
     StringBuffer buf = StringBuffer();
@@ -314,59 +321,80 @@ class MarkupTextEditingController extends TextEditingController {
     XmlElement thisList = XmlElement(XmlName("List"));
     XmlElement thisItem = XmlElement(XmlName("Item"));
     bool inList = false;
+    bool firstChar = true;
     int style = 0;
     Iterator<int> it = _markup.iterator;
     CharacterRange cr = text.characters.iterator;
 
     while (cr.moveNext()) {
       it.moveNext();
-      if (cr.current == "\n") {
-        cr.moveNext();
+      // new lines mean - new paragraphs or new list items
+      if (cr.current == "\n" || firstChar) {
+        if (!firstChar) {
+          cr.moveNext();
+        }
         // Add a list item if needed
         if (cr.current == bullet) {
-          it.moveNext();
+          if (!firstChar) {
+            it.moveNext();
+          }
           if (inList) {
             thisItem.children.add(
               _toNode(style, buf.toString()),
             ); // commit the previous list item
-            thisList.children.add(thisItem); // does this need to use copy??
+            thisList.children.add(thisItem);
+            buf.clear();
             thisItem = XmlElement(XmlName("Item")); // make a new item
           } else {
-            inList = true;
-            cr.moveNext(); // skip the following space
-            if (cr.current == " ") {
-              it.moveNext;
-            } else {
-              cr.moveBack();
+            if (buf.isNotEmpty) {
+              // commit paragraph contents up to the list element if needed
+              thisPara.children.add(_toNode(style, buf.toString()));
+              buf.clear();
             }
-            continue;
+            inList = true;
           }
+          // skip the space following the bullet
+          cr.moveNext();
+          if (cr.current == " ") {
+            it.moveNext();
+          } else {
+            cr.moveBack();
+          }
+          firstChar = false;
+          continue;
         }
-        cr.moveBack(); // not a bullet!
-        if (inList) {
-          inList = false;
-          // commit the list
-          thisItem.children.add(_toNode(style, buf.toString()));
-          buf.clear(); // commit the previous list item
-          thisList.children.add(thisItem); // does this need to use copy??
-          thisItem = XmlElement(XmlName("Item"));
-          thisPara.children.add(thisList);
-          thisList = XmlElement(XmlName("List"));
-          ret.add(thisPara.copy());
-          thisPara = XmlElement(XmlName("Paragraph"));
-        } else {
-          // not a list, commit the para
-          thisPara.children.add(_toNode(style, buf.toString()));
-          buf.clear();
-          ret.add(thisPara);
-          thisPara = XmlElement(XmlName("Paragraph"));
+        if (!firstChar) {
+          cr.moveBack();
+          // not a bullet!
+
+          if (inList) {
+            inList = false;
+            // commit the list
+            thisItem.children.add(_toNode(style, buf.toString()));
+            buf.clear(); // commit the previous list item
+            thisList.children.add(thisItem); // does this need to use copy??
+            thisPara.children.add(thisList);
+            ret.add(thisPara);
+            thisPara = XmlElement(XmlName("Paragraph"));
+            thisList = XmlElement(XmlName("List"));
+            thisItem = XmlElement(XmlName("Item"));
+          } else {
+            // not a list, commit the para
+            thisPara.children.add(_toNode(style, buf.toString()));
+            buf.clear();
+            ret.add(thisPara);
+            thisPara = XmlElement(XmlName("Paragraph"));
+          }
+          firstChar = false;
+          continue;
         }
-        continue;
+        firstChar = false;
       }
+      // if style is the same, write to buf and continue; else commit buf contents to item or para
       if (it.current == style) {
         buf.write(cr.current);
       } else {
-        if (buf.length > 0) {
+        if (buf.isNotEmpty) {
           if (inList) {
             thisItem.children.add(_toNode(style, buf.toString()));
           } else {
@@ -378,6 +406,7 @@ class MarkupTextEditingController extends TextEditingController {
         buf.write(cr.current);
       }
     }
+    // Now finalize, by adding the last content to a list or para.
     if (inList) {
       // commit the list
       thisItem.children.add(
@@ -460,4 +489,16 @@ XmlElement _toElement(
   List<XmlAttribute> attrs =
       (attrName == null) ? [] : [XmlAttribute(XmlName(attrName), attrVal!)];
   return XmlElement(XmlName(name), attrs, [XmlText(value)], false);
+}
+
+int _getStyle(XmlNode node) {
+  if (node.nodeType != XmlNodeType.ELEMENT) return 0;
+  switch ((node as XmlElement).name.local) {
+    case "Emphasis":
+      return 1;
+    case "Source":
+      return 2;
+    default:
+      return -1;
+  }
 }
